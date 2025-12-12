@@ -575,4 +575,4 @@ elif menu == "View Expenses":
 elif menu == "Edit Expenses":
     edit_expense()
 elif menu == "About":
-    about_page()     this is the streamlit code
+    about_page()     
