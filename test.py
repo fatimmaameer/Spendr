@@ -568,55 +568,134 @@ def create_enhanced_features(daily_df, monthly_totals):
             past_amounts = past_days["Amount"].values
             future_total = future_days["Amount"].sum()
             remaining_days = len(future_days)
-            
-            rows.append({
-                "Month": month_str,
-                "Cutoff_Day": cutoff_day,
-                "Days_Used": len(past_days),
-                "Remaining_Days": remaining_days,
-                "Partial_Sum": np.sum(past_amounts),
-                "Avg_Daily": np.mean(past_amounts),
-                "Std_Dev": np.std(past_amounts) if len(past_amounts) > 1 else 0,
-                "Last_Day_Spend": past_amounts[-1],
-                "Max_So_Far": np.max(past_amounts),
-                "Min_So_Far": np.min(past_amounts),
-                "Avg_Last_3": np.mean(past_amounts[-3:]) if len(past_amounts) >= 3 else np.mean(past_amounts),
-                "Avg_Last_7": np.mean(past_amounts[-7:]) if len(past_amounts) >= 7 else np.mean(past_amounts),
-                "Trend_3_Days": past_amounts[-1] - np.mean(past_amounts[-4:-1]) if len(past_amounts) >= 4 else 0,
-                "Spend_Ratio": (np.max(past_amounts) - np.min(past_amounts)) / np.mean(past_amounts) if np.mean(past_amounts) > 0 else 0,
-                "Weekend_Count": past_days["Is_Weekend"].sum(),
-                "Weekend_Avg": past_days[past_days["Is_Weekend"] == 1]["Amount"].mean() 
-                               if (past_days["Is_Weekend"] == 1).any() else np.mean(past_amounts),
-                "Target_Future_Total": future_total,
-                "Target_Full_Month": full_month_total
-            })
+
+            # Filter out any NaN or invalid values
+            past_amounts = past_amounts[~np.isnan(past_amounts)]
+            future_amounts = future_days["Amount"].values
+            future_amounts = future_amounts[~np.isnan(future_amounts)]
+            future_total = np.sum(future_amounts)
+
+            # Skip if we don't have valid data
+            if len(past_amounts) < 3:
+                continue
+
+            # Calculate statistics safely
+            try:
+                avg_daily = np.mean(past_amounts)
+                std_dev = np.std(past_amounts) if len(past_amounts) > 1 else 0
+                last_day_spend = past_amounts[-1] if len(past_amounts) > 0 else 0
+                max_so_far = np.max(past_amounts) if len(past_amounts) > 0 else 0
+                min_so_far = np.min(past_amounts) if len(past_amounts) > 0 else 0
+
+                # Safe mean calculations
+                avg_last_3 = np.mean(past_amounts[-3:]) if len(past_amounts) >= 3 else (avg_daily if avg_daily == avg_daily else 0)
+                avg_last_7 = np.mean(past_amounts[-7:]) if len(past_amounts) >= 7 else (avg_daily if avg_daily == avg_daily else 0)
+
+                # Trend calculation
+                trend_3_days = 0
+                if len(past_amounts) >= 4:
+                    recent_3 = past_amounts[-4:-1]
+                    if len(recent_3) > 0:
+                        trend_3_days = past_amounts[-1] - np.mean(recent_3)
+
+                # Spend ratio
+                spend_ratio = 0
+                if avg_daily > 0 and len(past_amounts) > 1:
+                    spend_ratio = (max_so_far - min_so_far) / avg_daily
+
+                # Weekend calculations
+                weekend_count = past_days["Is_Weekend"].sum()
+                weekend_avg = avg_daily  # default
+                weekend_data = past_days[past_days["Is_Weekend"] == 1]["Amount"]
+                if len(weekend_data) > 0:
+                    weekend_avg = np.mean(weekend_data[~np.isnan(weekend_data)])
+
+                rows.append({
+                    "Month": month_str,
+                    "Cutoff_Day": cutoff_day,
+                    "Days_Used": len(past_amounts),
+                    "Remaining_Days": remaining_days,
+                    "Partial_Sum": np.sum(past_amounts),
+                    "Avg_Daily": avg_daily,
+                    "Std_Dev": std_dev,
+                    "Last_Day_Spend": last_day_spend,
+                    "Max_So_Far": max_so_far,
+                    "Min_So_Far": min_so_far,
+                    "Avg_Last_3": avg_last_3,
+                    "Avg_Last_7": avg_last_7,
+                    "Trend_3_Days": trend_3_days,
+                    "Spend_Ratio": spend_ratio,
+                    "Weekend_Count": weekend_count,
+                    "Weekend_Avg": weekend_avg,
+                    "Target_Future_Total": future_total,
+                    "Target_Full_Month": full_month_total
+                })
+            except Exception as e:
+                # Skip this data point if calculations fail
+                continue
     
     return pd.DataFrame(rows)
 
 def predict_remaining_expenses(final_model, first_n_days, days_remaining):
     if days_remaining <= 0:
         return 0
-    
+
     first_n_days = np.array(first_n_days)
+    # Filter out NaN values
+    first_n_days = first_n_days[~np.isnan(first_n_days)]
+
     n_days = len(first_n_days)
-    
-    features = {
-        "Days_Used": n_days,
-        "Remaining_Days": days_remaining,
-        "Partial_Sum": np.sum(first_n_days),
-        "Avg_Daily": np.mean(first_n_days),
-        "Std_Dev": np.std(first_n_days) if n_days > 1 else 0.01,
-        "Last_Day_Spend": first_n_days[-1],
-        "Max_So_Far": np.max(first_n_days),
-        "Min_So_Far": np.min(first_n_days),
-        "Avg_Last_3": np.mean(first_n_days[-3:]) if n_days >= 3 else np.mean(first_n_days),
-        "Avg_Last_7": np.mean(first_n_days[-7:]) if n_days >= 7 else np.mean(first_n_days),
-        "Trend_3_Days": first_n_days[-1] - np.mean(first_n_days[-4:-1]) if n_days >= 4 else 0,
-        "Spend_Ratio": (np.max(first_n_days) - np.min(first_n_days)) / np.mean(first_n_days) 
-                      if np.mean(first_n_days) > 0 else 0.5,
-        "Weekend_Count": min(n_days // 2, 10),
-        "Weekend_Avg": np.mean(first_n_days) * 1.2
-    }
+
+    if n_days == 0:
+        return 0
+
+    # Safe calculations
+    try:
+        partial_sum = np.sum(first_n_days)
+        avg_daily = np.mean(first_n_days)
+        std_dev = np.std(first_n_days) if n_days > 1 else 0.01
+        last_day_spend = first_n_days[-1] if n_days > 0 else 0
+        max_so_far = np.max(first_n_days) if n_days > 0 else 0
+        min_so_far = np.min(first_n_days) if n_days > 0 else 0
+
+        # Safe mean calculations for subsets
+        avg_last_3 = np.mean(first_n_days[-3:]) if n_days >= 3 else avg_daily
+        avg_last_7 = np.mean(first_n_days[-7:]) if n_days >= 7 else avg_daily
+
+        # Trend calculation
+        trend_3_days = 0
+        if n_days >= 4:
+            recent_3 = first_n_days[-4:-1]
+            if len(recent_3) > 0:
+                trend_3_days = first_n_days[-1] - np.mean(recent_3)
+
+        # Spend ratio
+        spend_ratio = 0.5  # default
+        if n_days > 1 and avg_daily > 0:
+            spend_ratio = (max_so_far - min_so_far) / avg_daily
+
+        weekend_count = min(n_days // 2, 10)
+        weekend_avg = avg_daily * 1.2 if avg_daily > 0 else 1.0
+
+        features = {
+            "Days_Used": n_days,
+            "Remaining_Days": days_remaining,
+            "Partial_Sum": partial_sum,
+            "Avg_Daily": avg_daily,
+            "Std_Dev": std_dev,
+            "Last_Day_Spend": last_day_spend,
+            "Max_So_Far": max_so_far,
+            "Min_So_Far": min_so_far,
+            "Avg_Last_3": avg_last_3,
+            "Avg_Last_7": avg_last_7,
+            "Trend_3_Days": trend_3_days,
+            "Spend_Ratio": spend_ratio,
+            "Weekend_Count": weekend_count,
+            "Weekend_Avg": weekend_avg
+        }
+    except Exception as e:
+        # Return a conservative estimate if calculations fail
+        return days_remaining * 1000  # Conservative daily estimate
     
     input_df = pd.DataFrame([features])
     prediction = final_model.predict(input_df)[0]
@@ -703,29 +782,66 @@ def predictions_page():
         # Load historical training data from MLdata.csv
         try:
             df_training = pd.read_csv("MLdata.csv")
+
+            # Clean the data thoroughly
             df_training["Date"] = pd.to_datetime(df_training["Date"], errors='coerce')
             df_training = df_training.dropna(subset=['Date'])
+
+            # Convert Amount to numeric and filter invalid values
+            df_training["Amount"] = pd.to_numeric(df_training["Amount"], errors='coerce')
+            df_training = df_training.dropna(subset=['Amount'])
+            df_training = df_training[df_training['Amount'] > 0]  # Remove zero or negative amounts
+
+            if len(df_training) < 100:
+                st.error("MLdata.csv contains insufficient clean training data.")
+                st.info(f"Only {len(df_training)} valid records found after cleaning. Need at least 100.")
+                return
+
         except FileNotFoundError:
             st.error("MLdata.csv file not found. Please ensure the training data file is available in the same directory.")
             return
         except Exception as e:
             st.error(f"Error loading training data: {str(e)}")
+            st.info("Please check the MLdata.csv file format and data quality.")
             return
 
         # Prepare training data
         df_training = df_training.copy()
+
+        # Clean the training data
+        df_training = df_training.dropna(subset=['Amount'])
+        df_training = df_training[df_training['Amount'] > 0]  # Remove negative or zero amounts
+
+        if len(df_training) < 50:
+            st.error("MLdata.csv contains insufficient valid training data.")
+            st.info(f"Only {len(df_training)} valid records found. Need at least 50.")
+            return
+
         daily_training = df_training.groupby("Date")["Amount"].sum().reset_index()
         daily_training["Month"] = daily_training["Date"].dt.to_period("M")
         daily_training["Day"] = daily_training["Date"].dt.day
         daily_training["Day_of_Week"] = daily_training["Date"].dt.dayofweek
         daily_training["Is_Weekend"] = daily_training["Day_of_Week"].isin([5, 6]).astype(int)
         monthly_totals = daily_training.groupby("Month")["Amount"].sum()
+
+        # Filter out months with very few days
+        valid_months = monthly_totals[monthly_totals > 100]  # Months with at least some spending
+        if len(valid_months) < 3:
+            st.error("MLdata.csv doesn't contain enough valid monthly data for training.")
+            st.info(f"Only {len(valid_months)} valid months found. Need at least 3.")
+            return
         
         # Create training data from historical data
-        training_df = create_enhanced_features(daily_training, monthly_totals)
+        try:
+            training_df = create_enhanced_features(daily_training, monthly_totals)
+        except Exception as e:
+            st.error(f"Error processing training data: {str(e)}")
+            st.info("Please check the MLdata.csv file for data quality issues.")
+            return
 
         if len(training_df) < 10:
             st.error("Not enough training data points in MLdata.csv. Please ensure the training file has sufficient historical data.")
+            st.info(f"Only {len(training_df)} valid training samples found. Need at least 10.")
             return
 
         feature_cols = [
