@@ -662,41 +662,50 @@ def predictions_page():
     with st.expander("ℹ️ About the AI Model"):
         st.markdown("""
         This feature uses machine learning to predict your future expenses based on your spending patterns.
-        
+
         **Features:**
-        - Trained on `MLdata.csv` for generalized patterns
+        - Uses Random Forest, Gradient Boosting, and Linear Regression models
         - Analyzes trends, moving averages, and weekend spending patterns
-        - Predicts remaining month expenses automatically using current month's data
+        - Predicts remaining month expenses from partial data
+        - Automatically selects the best performing model
         """)
     
-    # -------------------------------
     # Load ML training data
-    # -------------------------------
-    if not os.path.exists("MLdata.csv"):
-        st.error("MLdata.csv not found! Cannot train model.")
+    try:
+        ml_df = pd.read_csv("MLdata.csv")
+    except FileNotFoundError:
+        st.error("MLdata.csv not found! Please make sure the file exists.")
         return
     
-    ml_df = pd.read_csv("MLdata.csv")
-    
-    if len(ml_df) < 10:
-        st.error("MLdata.csv does not contain enough data for training!")
+    if ml_df.empty:
+        st.error("MLdata.csv is empty. Cannot train model.")
         return
     
+    # Feature check
     feature_cols = [
-        "Days_Used", "Remaining_Days", "Partial_Sum", "Avg_Daily", "Std_Dev",
-        "Last_Day_Spend", "Max_So_Far", "Min_So_Far", 
+        "Days_Used", "Remaining_Days", "Partial_Sum", "Avg_Daily", 
+        "Std_Dev", "Last_Day_Spend", "Max_So_Far", "Min_So_Far",
         "Avg_Last_3", "Avg_Last_7", "Trend_3_Days", "Spend_Ratio",
         "Weekend_Count", "Weekend_Avg"
     ]
     
-    X = ml_df[feature_cols]
-    y = ml_df["Target_Future_Total"]
+    available_features = [col for col in feature_cols if col in ml_df.columns]
+    missing_features = [col for col in feature_cols if col not in ml_df.columns]
     
+    if missing_features:
+        st.warning(f"⚠️ The following features are missing in MLdata.csv and will be ignored: {missing_features}")
+    
+    X = ml_df[available_features]
+    y = ml_df["Target_Future_Total"] if "Target_Future_Total" in ml_df.columns else None
+    if y is None:
+        st.error("Target_Future_Total column missing in MLdata.csv. Cannot train model.")
+        return
+    
+    # Split and train models
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=42, shuffle=True
+        X, y, test_size=0.2, random_state=42, shuffle=True
     )
     
-    # Train models
     models = {
         "Random Forest": RandomForestRegressor(
             n_estimators=200,
@@ -717,12 +726,13 @@ def predictions_page():
     
     best_model = None
     best_score = -np.inf
-    best_model_name = ""
-    
     for name, model in models.items():
+        try:
+            cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
+            r2 = cv_scores.mean()
+        except:
+            r2 = -np.inf
         model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        r2 = r2_score(y_test, y_pred)
         if r2 > best_score:
             best_score = r2
             best_model = model
@@ -731,51 +741,45 @@ def predictions_page():
     final_model = best_model
     final_model.fit(X_train, y_train)
     
-    st.success(f"✅ Model trained successfully! Using: **{best_model_name}**")
-    
-    col1, col2 = st.columns(2)
     y_pred_final = final_model.predict(X_test)
     mae = mean_absolute_error(y_test, y_pred_final)
     r2_final = r2_score(y_test, y_pred_final)
+    
+    st.success(f"✅ Model trained successfully! Using: **{best_model_name}**")
+    col1, col2 = st.columns(2)
     with col1:
         st.metric("Model Accuracy (R²)", f"{r2_final:.3f}")
     with col2:
         st.metric("Average Error (MAE)", f"PKR {mae:.2f}")
     
-    st.markdown("---")
-    
-    # -------------------------------
-    # Automatic prediction using current month's expenses
-    # -------------------------------
-    st.subheader("🎯 AI Prediction for Current Month")
-    
-    df_expenses = load_expenses()
-    df_expenses['Date'] = pd.to_datetime(df_expenses['Date'])
-    current_month_period = pd.Timestamp.now().to_period('M')
-    
-    current_month_data = df_expenses[df_expenses['Date'].dt.to_period('M') == current_month_period]
-    
-    if current_month_data.empty:
-        st.warning("No expenses recorded for this month. Prediction cannot be made.")
+    # -----------------------------
+    # Prepare input from expenses.csv
+    # -----------------------------
+    df_exp = load_expenses()
+    if df_exp.empty:
+        st.info("No expenses recorded yet in expenses.csv.")
         return
     
-    # Take daily totals
-    daily_totals = current_month_data.groupby('Date')['Amount'].sum().sort_index()
-    daily_expenses = daily_totals.tolist()
+    today = datetime.now()
+    current_month = today.to_period("M")
     
+    # Filter current month
+    month_data = df_exp[pd.to_datetime(df_exp['Date']).dt.to_period('M') == current_month]
+    month_data = month_data.sort_values('Date')
+    
+    if month_data.empty:
+        st.info(f"No expenses recorded for {current_month}.")
+        return
+    
+    daily_expenses = month_data.groupby(pd.to_datetime(month_data['Date']).dt.day)["Amount"].sum().tolist()
     days_used = len(daily_expenses)
-    total_days = current_month_period.days_in_month
+    total_days = month_data['Date'].dt.days_in_month.iloc[0]
     
-    st.info(f"Using {days_used} days of expense data for {current_month_period}. Total days in month: {total_days}")
-    
-    # -------------------------------
-    # Make prediction
-    # -------------------------------
+    # Predict full month
     result = predict_full_month_from_partial(final_model, daily_expenses, total_days)
     
     st.markdown("---")
     st.subheader("📊 Prediction Results")
-    
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Spent So Far", f"PKR {result['spent_so_far']:.2f}")
@@ -784,8 +788,9 @@ def predictions_page():
     with col3:
         st.metric("Full Month Prediction", f"PKR {result['predicted_full_month']:.2f}")
     
-    # Visual comparison
     st.markdown("---")
+    
+    # Visual comparison
     st.subheader("📈 Comparison Chart")
     categories = ['Spent So Far', 'Predicted Remaining']
     values = [result['spent_so_far'], result['predicted_remaining']]
@@ -808,18 +813,11 @@ def predictions_page():
     st.subheader("📊 Daily Averages Comparison")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric(
-            "Current Daily Average", 
-            f"PKR {result['daily_average_so_far']:.2f}",
-            help="Average daily spending so far"
-        )
+        st.metric("Current Daily Average", f"PKR {result['daily_average_so_far']:.2f}")
     with col2:
-        st.metric(
-            "Predicted Daily Average (Remaining)", 
-            f"PKR {result['predicted_daily_remaining']:.2f}",
-            delta=f"{result['predicted_daily_remaining'] - result['daily_average_so_far']:.2f}",
-            delta_color="normal"
-        )
+        st.metric("Predicted Daily Average (Remaining)", f"PKR {result['predicted_daily_remaining']:.2f}",
+                  delta=f"{result['predicted_daily_remaining'] - result['daily_average_so_far']:.2f}",
+                  delta_color="normal")
     
     # Spending insights
     st.markdown("---")
@@ -831,7 +829,7 @@ def predictions_page():
     else:
         st.info("📊 Your spending is predicted to remain relatively consistent.")
     
-    # Simple projection vs AI model
+    # Simple projection vs model
     simple_projection = result['daily_average_so_far'] * total_days
     st.metric(
         "Simple Projection (avg × total days)", 
