@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Spendr", page_icon="🪙", layout="centered")
 
 # Function to set dark background using encoded local image
-def set_bg_from_local( image_file ):
+def set_bg_from_local(image_file):
     with open(image_file, "rb") as img:
         encoded = base64.b64encode(img.read()).decode()
     css = f"""
@@ -708,11 +708,8 @@ def predict_remaining_expenses(final_model, first_n_days, days_remaining):
         prediction *= trend_factor
     
     prediction *= 0.85
-    
-    min_pred = np.mean(first_n_days) * days_remaining * 0.5
-    max_pred = np.mean(first_n_days) * days_remaining * 2.0
-    prediction = max(min_pred, min(prediction, max_pred))
-    
+
+    # Removed mean-based bounds - now purely ML prediction
     return max(0, round(prediction, 2))
 
 def predict_full_month_from_partial(final_model, first_n_days, total_month_days=30):
@@ -724,7 +721,6 @@ def predict_full_month_from_partial(final_model, first_n_days, total_month_days=
             "spent_so_far": spent_so_far,
             "predicted_remaining": 0,
             "predicted_full_month": spent_so_far,
-            "daily_average_so_far": spent_so_far / len(first_n_days),
             "predicted_daily_remaining": 0,
             "days_used": len(first_n_days),
             "days_remaining": 0
@@ -737,7 +733,6 @@ def predict_full_month_from_partial(final_model, first_n_days, total_month_days=
         "spent_so_far": spent_so_far,
         "predicted_remaining": predicted_remaining,
         "predicted_full_month": full_month_prediction,
-        "daily_average_so_far": spent_so_far / len(first_n_days),
         "predicted_daily_remaining": predicted_remaining / days_remaining if days_remaining > 0 else 0,
         "days_used": len(first_n_days),
         "days_remaining": days_remaining
@@ -754,6 +749,7 @@ def predictions_page():
         - Uses Random Forest, Gradient Boosting, and Linear Regression models
         - **Trained exclusively on MLdata.csv** (historical expense data from 2023-2024)
         - Analyzes trends, moving averages, and weekend spending patterns
+        - **Purely ML-driven predictions** - no mean-based calculations or bounds
         - Automatically predicts remaining month expenses from current month data
         - Automatically selects the best performing model
 
@@ -990,43 +986,46 @@ def predictions_page():
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Daily averages comparison
-            st.subheader("📊 Daily Averages Comparison")
+            # ML prediction breakdown (no mean calculations)
+            st.subheader("📊 ML Prediction Breakdown")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(
-                    "Current Daily Average", 
-                    f"PKR {result['daily_average_so_far']:.2f}",
-                    help="Average daily spending so far"
+                    "Days Used for Prediction",
+                    f"{result['days_used']} days",
+                    help="Number of days with expense data used for ML prediction"
                 )
             with col2:
                 st.metric(
-                    "Predicted Daily Average (Remaining)", 
-                    f"PKR {result['predicted_daily_remaining']:.2f}",
-                    delta=f"{result['predicted_daily_remaining'] - result['daily_average_so_far']:.2f}",
-                    delta_color="normal"
+                    "Remaining Days",
+                    f"{result['days_remaining']} days",
+                    help="Days left in month for ML prediction"
                 )
             
-            # Advice based on prediction
+            # ML-based spending insights (no mean calculations)
             st.markdown("---")
-            st.subheader("💡 Spending Insights")
-            
-            if result['predicted_daily_remaining'] > result['daily_average_so_far'] * 1.2:
-                st.warning("⚠️ You're predicted to spend **more** in the remaining days. Consider tightening your budget.")
-            elif result['predicted_daily_remaining'] < result['daily_average_so_far'] * 0.8:
-                st.success("✅ You're predicted to spend **less** in the remaining days. Great job!")
-            else:
-                st.info("📊 Your spending is predicted to remain relatively consistent.")
-            
-            # Simple projection vs model comparison
-            simple_projection = result['daily_average_so_far'] * total_days
-            st.metric(
-                "Simple Projection (avg × total days)", 
-                f"PKR {simple_projection:.2f}",
-                delta=f"{result['predicted_full_month'] - simple_projection:.2f}",
-                delta_color="normal",
-                help="Difference between simple projection and AI prediction"
-            )
+            st.subheader("💡 ML-Based Spending Insights")
+
+            # Calculate insights based on ML predictions vs actual spending pattern
+            total_predicted_remaining = result['predicted_remaining']
+            remaining_days = result['days_remaining']
+
+            if remaining_days > 0:
+                predicted_daily_rate = total_predicted_remaining / remaining_days
+                current_daily_rate = result['spent_so_far'] / result['days_used'] if result['days_used'] > 0 else 0
+
+                if predicted_daily_rate > current_daily_rate * 1.2:
+                    st.warning("⚠️ ML predicts you'll spend **more** in the remaining days. Consider tightening your budget.")
+                elif predicted_daily_rate < current_daily_rate * 0.8:
+                    st.success("✅ ML predicts you'll spend **less** in the remaining days. Great job!")
+                else:
+                    st.info("📊 ML predicts your spending will remain relatively consistent.")
+
+            st.markdown("---")
+            st.subheader("📊 Final Projection Breakdown")
+            st.info("**Pure ML Prediction**: Full month expenses = Currently spent + ML-predicted remaining expenses")
+            st.metric("**Final ML Projection**", f"PKR {result['predicted_full_month']:.2f}",
+                     help="Currently spent + ML-predicted remaining expenses (no mean calculations)")
 
 
 # Main App
