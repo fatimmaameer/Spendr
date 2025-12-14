@@ -708,11 +708,8 @@ def predict_remaining_expenses(final_model, first_n_days, days_remaining):
         prediction *= trend_factor
     
     prediction *= 0.85
-    
-    min_pred = np.mean(first_n_days) * days_remaining * 0.5
-    max_pred = np.mean(first_n_days) * days_remaining * 2.0
-    prediction = max(min_pred, min(prediction, max_pred))
-    
+
+    # Removed mean-based bounds - now purely ML prediction
     return max(0, round(prediction, 2))
 
 def predict_full_month_from_partial(final_model, first_n_days, total_month_days=30):
@@ -754,6 +751,7 @@ def predictions_page():
         - Uses Random Forest, Gradient Boosting, and Linear Regression models
         - **Trained exclusively on MLdata.csv** (historical expense data from 2023-2024)
         - Analyzes trends, moving averages, and weekend spending patterns
+        - **Purely ML-driven predictions** - no mean-based calculations or bounds
         - Automatically predicts remaining month expenses from current month data
         - Automatically selects the best performing model
 
@@ -1018,15 +1016,7 @@ def predictions_page():
             else:
                 st.info("📊 Your spending is predicted to remain relatively consistent.")
             
-            # Simple projection vs model comparison
-            simple_projection = result['daily_average_so_far'] * total_days
-            st.metric(
-                "Simple Projection (avg × total days)", 
-                f"PKR {simple_projection:.2f}",
-                delta=f"{result['predicted_full_month'] - simple_projection:.2f}",
-                delta_color="normal",
-                help="Difference between simple projection and AI prediction"
-            )
+            # Removed simple mean-based projection comparison - now purely ML-driven
 
 
 # Main App
@@ -1079,4 +1069,4 @@ elif menu == "Edit Expenses":
 elif menu == "Predictions":  # ADDED NEW MENU OPTION
     predictions_page()
 elif menu == "About":
-    about_page()
+    about_page()v
