@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -939,15 +940,18 @@ def predictions_page():
         model_results = {}
         
         for name, model in models.items():
-            cv_scores = cross_val_score(model, X_train, y_train, 
+            cv_scores = cross_val_score(model, X_train, y_train,
                                         cv=5, scoring='neg_mean_absolute_error')
             avg_mae = -cv_scores.mean()
-            
+
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
-            
+
+            mae = mean_absolute_error(y_test, y_pred)
             r2 = r2_score(y_test, y_pred)
-            
+
+            model_results[name] = {'mae': mae, 'r2': r2}
+
             if r2 > best_score:
                 best_score = r2
                 best_model = model
@@ -1083,6 +1087,54 @@ def predictions_page():
             st.info("**Pure ML Prediction**: Full month expenses = Currently spent + ML-predicted remaining expenses")
             st.metric("**Final ML Projection**", f"PKR {result['predicted_full_month']:.2f}",
                      help="Currently spent + ML-predicted remaining expenses (no mean calculations)")
+
+            # Model Performance Comparison Bar Graph
+            st.markdown("---")
+            st.subheader("📊 Model Performance Comparison")
+
+            model_names = list(model_results.keys())
+            mae_values = [model_results[name]['mae'] for name in model_names]
+
+            # Create matplotlib bar chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            bars = ax.bar(model_names, mae_values, color=['#FF6B6B', '#4ECDC4', '#45B7D1'], alpha=0.8)
+
+            # Add value labels on top of bars
+            for bar, mae in zip(bars, mae_values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + max(mae_values)*0.02,
+                        f'PKR {mae:.2f}', ha='center', va='bottom', fontweight='bold')
+
+            # Customize the chart
+            ax.set_ylabel('Mean Absolute Error (MAE)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Machine Learning Models', fontsize=12, fontweight='bold')
+            ax.set_title('Model Accuracy Comparison: Lower MAE = Better Performance',
+                         fontsize=14, fontweight='bold', pad=20)
+            ax.grid(axis='y', alpha=0.3)
+
+            # Highlight the best model (lowest MAE)
+            best_idx = mae_values.index(min(mae_values))
+            bars[best_idx].set_color('#FFD700')  # Gold color for best model
+
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            # Performance Insights
+            st.markdown("---")
+            st.subheader("💡 Model Performance Insights")
+
+            best_model_name_display = model_names[best_idx]
+            best_mae = min(mae_values)
+            worst_mae = max(mae_values)
+            improvement = ((worst_mae - best_mae) / worst_mae) * 100
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("🏆 Best Model", best_model_name_display, f"MAE: PKR {best_mae:.2f}")
+            with col2:
+                st.metric("📈 Performance Range", f"PKR {worst_mae-best_mae:.2f}", f"{improvement:.1f}% better")
+            with col3:
+                st.metric("🎯 Model Selected", best_model_name_display, "for predictions")
 
 
 # Main App
