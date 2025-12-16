@@ -1110,7 +1110,7 @@ with st.sidebar:
     # Navigation with golden selection effect - ADDED PREDICTIONS OPTION
     menu = st.radio(
         "Navigation",
-        ["Dashboard", "Add Expense", "View Expenses", "Edit Expenses", "Predictions", "About"],
+        ["Dashboard", "Add Expense", "View Expenses", "Edit Expenses", "Predictions"],
         index=0,
         key="nav"
     )
