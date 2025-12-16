@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -523,81 +524,7 @@ def edit_expense():
             else:
                 st.error("Failed to delete expenses. Please try again.")
 
-# About Page
-def about_page():
-    st.balloons()
-    st.markdown('<h1 class="about-header">About Spendr</h1>', unsafe_allow_html=True)
-    st.markdown("""
-    <p style='text-align: center; font-size: 18px; color: #888888;'>
-        Spendr is a personal expense tracking application designed to help you monitor your spending habits 
-        and gain financial awareness. With beautiful visualizations and intuitive controls, managing your 
-        money has never been easier.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<h2 class="about-subheader">🌍 About the Developer</h2>', unsafe_allow_html=True)
-    
-    # Developer info in columns
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.markdown("""
-                    <br><br> 
-        <div style='text-align: center;'>
-            <img src='https://media.licdn.com/dms/image/v2/D4D03AQHnjp96gkwCZA/profile-displayphoto-shrink_400_400/B4DZVRSQG5HIAg-/0/1740825496309?e=1756339200&v=beta&t=zOwgJ-pTDxNpTzLHJ7pzer2RFHtDVd_GhwJKQrMzG4E' 
-                 style='width: 150px; height: 150px; border-radius: 50%; border: 4px solid #D4AF37;'>
-            <h3 style='color:#666666; margin-top: 10px;'>-Haris Farooq</h3>
-            <p style='color: #888888;' > UI/UX Enthusiast</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <p style='font-size: 16px; color: #888888;'>
-        <br><br>
-            Hi! I'm Haris Farooq, a student of BS Artificial Intelligence (Batch 34) at GIK Institute. I'm passionate about using technology to solve real-world problems, especially in the fields of AI, data science, and automation. I love taking on creative challenges and constantly seek opportunities to learn and grow.This is my first Streamlit app, and I'm excited to share it as part of my journey into building interactive, user-friendly tools with real-world impact!
-        </p>
-        <p style='font-size: 16px;'>
-            When I'm not coding, you can find me exploring new technologies, contributing to 
-            open-source projects, or enjoying outdoor activities.
-        </p>
-        """, unsafe_allow_html=True)
-    
-    st.markdown('<h2 class="about-subheader">🛠️ Technical Skills</h2>', unsafe_allow_html=True)
-    st.markdown(""" 
-        <br> 
-    <div style='text-align: center;'>
-        <span class='skill-pill'>Python</span>
-        <span class='skill-pill'>Streamlit</span>
-        <span class='skill-pill'>Pandas</span>
-        <span class='skill-pill'>Plotly</span>
-        <span class='skill-pill'>Data Visualization</span>
-        <span class='skill-pill'>Web Development</span>
-        <span class='skill-pill'>UI/UX Design</span>
-        <span class='skill-pill'>Data Analysis</span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<h2 class="about-subheader">🌍 Connect With Me</h2>', unsafe_allow_html=True)
-    st.markdown("""
-        <br> 
-    <div style='text-align: center;'>
-        <a href='https://github.com/HarisFarooq23' class='social-icon'>GitHub</a>
-        <a href='https://www.linkedin.com/in/harisfarooq23/' class='social-icon'>LinkedIn</a>
-        
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<h2 class="about-subheader">🌍 Special Thanks</h2>', unsafe_allow_html=True)
-    st.markdown("""
-        <br> 
-    <p style='text-align: center; font-size: 16px;color: #888888;'>
-        Thank you for using Spendr! If you enjoy this application, please consider starring 
-        the project on GitHub or sharing it with friends who might find it useful.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+
 
 # ----------------------------------------------------
 # PREDICTION FUNCTIONS (Integrated from Python code)
@@ -939,15 +866,18 @@ def predictions_page():
         model_results = {}
         
         for name, model in models.items():
-            cv_scores = cross_val_score(model, X_train, y_train, 
+            cv_scores = cross_val_score(model, X_train, y_train,
                                         cv=5, scoring='neg_mean_absolute_error')
             avg_mae = -cv_scores.mean()
-            
+
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
-            
+
+            mae = mean_absolute_error(y_test, y_pred)
             r2 = r2_score(y_test, y_pred)
-            
+
+            model_results[name] = {'mae': mae, 'r2': r2}
+
             if r2 > best_score:
                 best_score = r2
                 best_model = model
@@ -1084,6 +1014,77 @@ def predictions_page():
             st.metric("**Final ML Projection**", f"PKR {result['predicted_full_month']:.2f}",
                      help="Currently spent + ML-predicted remaining expenses (no mean calculations)")
 
+            # Model Performance Comparison Bar Graph
+            st.markdown("---")
+            st.subheader("📊 Model Performance Comparison")
+
+            model_names = list(model_results.keys())
+            mae_values = [model_results[name]['mae'] for name in model_names]
+
+            # Create matplotlib bar chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # Make background transparent
+            fig.patch.set_alpha(0)
+            ax.set_facecolor('none')
+            
+            bars = ax.bar(model_names, mae_values, color=['#FF6B6B', '#4ECDC4', '#45B7D1'], alpha=0.8)
+            
+            # Add value labels on top of bars
+            for bar, mae in zip(bars, mae_values):
+                height = bar.get_height()
+                ax.text(
+                    bar.get_x() + bar.get_width()/2.,
+                    height + max(mae_values)*0.02,
+                    f'PKR {mae:.2f}',
+                    ha='center',
+                    va='bottom',
+                    fontweight='bold',
+                    color='white'  # text color white
+                )
+            
+            # Customize the chart (text color white)
+            ax.set_ylabel('Mean Absolute Error (MAE)', fontsize=12, fontweight='bold', color='white')
+            ax.set_xlabel('Machine Learning Models', fontsize=12, fontweight='bold', color='white')
+            ax.set_title(
+                'Model Accuracy Comparison: Lower MAE = Better Performance',
+                fontsize=14,
+                fontweight='bold',
+                pad=20,
+                color='white'
+            )
+            
+            # Grid styling
+            ax.grid(axis='y', alpha=0.3)
+            
+            # Tick colors white
+            ax.tick_params(colors='white')
+            
+            # Highlight the best model (lowest MAE)
+            best_idx = mae_values.index(min(mae_values))
+            bars[best_idx].set_color('#FFD700')  # Gold color for best model
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+
+
+            # Performance Insights
+            st.markdown("---")
+            st.subheader("💡 Model Performance Insights")
+
+            best_model_name_display = model_names[best_idx]
+            best_mae = min(mae_values)
+            worst_mae = max(mae_values)
+            improvement = ((worst_mae - best_mae) / worst_mae) * 100
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("🏆 Best Model", best_model_name_display, f"MAE: PKR {best_mae:.2f}")
+            with col2:
+                st.metric("📈 Performance Range", f"PKR {worst_mae-best_mae:.2f}", f"{improvement:.1f}% better")
+            with col3:
+                st.metric("🎯 Model Selected", best_model_name_display, "for predictions")
+
 
 # Main App
 init_csv()
@@ -1109,7 +1110,7 @@ with st.sidebar:
     # Navigation with golden selection effect - ADDED PREDICTIONS OPTION
     menu = st.radio(
         "Navigation",
-        ["Dashboard", "Add Expense", "View Expenses", "Edit Expenses", "Predictions", "About"],
+        ["Dashboard", "Add Expense", "View Expenses", "Edit Expenses", "Predictions"],
         index=0,
         key="nav"
     )
